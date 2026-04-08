@@ -1,0 +1,150 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: ecommerce-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init/01-init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql
+
+  redis:
+    image: redis:7
+    container_name: ecommerce-redis
+    ports:
+      - "6379:6379"
+
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    container_name: config-server
+    ports:
+      - "8888:8888"
+
+  discovery-service:
+    build:
+      context: .
+      dockerfile: discovery-service/Dockerfile
+    container_name: discovery-service
+    ports:
+      - "8761:8761"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+    depends_on:
+      - config-server
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    container_name: user-service
+    ports:
+      - "8081:8081"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://discovery-service:8761/eureka
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: user_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+    depends_on:
+      - postgres
+      - config-server
+      - discovery-service
+
+  product-service:
+    build:
+      context: .
+      dockerfile: product-service/Dockerfile
+    container_name: product-service
+    ports:
+      - "8082:8082"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://discovery-service:8761/eureka
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: product_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - postgres
+      - redis
+      - config-server
+      - discovery-service
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    container_name: order-service
+    ports:
+      - "8083:8083"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://discovery-service:8761/eureka
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: order_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      PRODUCT_SERVICE_URL: http://product-service:8082
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    depends_on:
+      - postgres
+      - config-server
+      - discovery-service
+      - product-service
+      - notification-service
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-service
+    ports:
+      - "8084:8084"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://discovery-service:8761/eureka
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: notification_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+    depends_on:
+      - postgres
+      - config-server
+      - discovery-service
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://discovery-service:8761/eureka
+      USER_SERVICE_URL: http://user-service:8081
+      PRODUCT_SERVICE_URL: http://product-service:8082
+      ORDER_SERVICE_URL: http://order-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    depends_on:
+      - config-server
+      - discovery-service
+      - user-service
+      - product-service
+      - order-service
+      - notification-service
+
+volumes:
+  postgres_data:
